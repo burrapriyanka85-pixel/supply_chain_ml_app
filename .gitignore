@@ -11,6 +11,10 @@ __pycache__/
 # Database
 users.db
 
+# Environment / logs
+.env
+*.log
+
 # OS files
 .DS_Store
 Thumbs.db
