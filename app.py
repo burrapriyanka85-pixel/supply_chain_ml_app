@@ -33,6 +33,13 @@ except ImportError:
     st.warning("Installing 'werkzeug' is recommended for security features.")
 
 # ===============================
+# ENVIRONMENT CONFIGURATION
+# ===============================
+
+# Detect if running on Streamlit Cloud to disable File Writes
+IS_CLOUD = os.environ.get("STREAMLIT_RUNTIME") == "cloud"
+
+# ===============================
 # SAFE ML TRAINING UTILITIES
 # ===============================
 
@@ -306,11 +313,15 @@ h1, h2, h3 {
 
 # ---------- SQLite helpers ----------
 def get_db_conn():
+    if IS_CLOUD:
+        raise RuntimeError("Database connection disabled on Streamlit Cloud")
     conn = sqlite3.connect(DB_FILE, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     return conn
 
 def init_db():
+    if IS_CLOUD:
+        return
     try:
         conn = get_db_conn()
         cur = conn.cursor()
@@ -331,6 +342,8 @@ def init_db():
         st.error(f"Database initialization error: {e}")
 
 def create_user_db(email, password, full_name=""):
+    if IS_CLOUD:
+        return False, "Database disabled on Cloud"
     email = email.strip().lower()
     conn = get_db_conn()
     cur = conn.cursor()
@@ -347,6 +360,8 @@ def create_user_db(email, password, full_name=""):
         conn.close()
 
 def get_user_by_email(email):
+    if IS_CLOUD:
+        return None
     email = email.strip().lower()
     conn = get_db_conn()
     cur = conn.cursor()
@@ -356,6 +371,8 @@ def get_user_by_email(email):
     return dict(row) if row else None
 
 def authenticate_user_db(email, password):
+    if IS_CLOUD:
+        return False, "Database disabled on Cloud"
     user = get_user_by_email(email)
     if not user:
         return False, "No such user"
@@ -369,8 +386,12 @@ def authenticate_user_db(email, password):
     except Exception as e:
         return False, str(e)
 
-# Initialize DB on run
-init_db()
+# Initialize DB on run (Local only)
+if not IS_CLOUD:
+    init_db()
+else:
+    # Optional: Log to console for debugging
+    pass 
 
 # ---------- helpers to patch ColumnTransformer (compat across sklearn versions) ----------
 def _patch_column_transformer(obj):
@@ -429,6 +450,7 @@ def safe_load_model(bytes_io):
 # ---------- Model & data helpers ----------
 @st.cache_resource
 def load_model_from_path(path=MODEL_FILE_DEFAULT):
+    # FIX 3: Guard file operations
     if not os.path.exists(path):
         return None, f"Model file not found at {path}"
     try:
@@ -569,14 +591,26 @@ def persist_model_bytes(model):
 if "page" not in st.session_state:
     st.session_state["page"] = "Home"
 
+# FIX 2 & FIX 3: NEVER auto-load model files if on Cloud or missing
 if "last_model" not in st.session_state:
-    loaded_model, load_err = load_model_from_path(MODEL_FILE_DEFAULT)
-    st.session_state["last_model"] = loaded_model
-    st.session_state["last_model_err"] = load_err
-    st.session_state["model_loaded"] = loaded_model is not None
+    if not IS_CLOUD:
+        # Only try loading from disk if local
+        loaded_model, load_err = load_model_from_path(MODEL_FILE_DEFAULT)
+        st.session_state["last_model"] = loaded_model
+        st.session_state["last_model_err"] = load_err
+        st.session_state["model_loaded"] = loaded_model is not None
+    else:
+        # Cloud: Don't auto-load local files that might not exist
+        st.session_state["last_model"] = None
+        st.session_state["last_model_err"] = "Auto-load disabled on Cloud"
+        st.session_state["model_loaded"] = False
 
+# FIX 1: Auto-login user on Cloud to bypass SQLite requirements
 if "current_user" not in st.session_state:
-    st.session_state["current_user"] = None
+    if IS_CLOUD:
+        st.session_state["current_user"] = {"email": "demo@cloud.com", "full_name": "Cloud Demo User"}
+    else:
+        st.session_state["current_user"] = None
 
 # Ensure test sets exist for insights
 if "X_test" not in st.session_state:
@@ -647,10 +681,13 @@ with st.sidebar:
         user = st.session_state["current_user"]
         st.markdown("### 👤 Account")
         st.write(user.get("full_name") or user.get("email"))
-        if st.button("🚪 Logout", use_container_width=True):
-            st.session_state["current_user"] = None
-            st.session_state["page"] = "Home"
-            st.rerun()
+        if not IS_CLOUD:
+            if st.button("🚪 Logout", use_container_width=True):
+                st.session_state["current_user"] = None
+                st.session_state["page"] = "Home"
+                st.rerun()
+        else:
+            st.caption("Running in Cloud Demo Mode")
     else:
         # ----- AUTH PAGES -----
         auth_page = st.radio(
@@ -675,6 +712,11 @@ st.markdown(
 
 # ---------- AUTHENTICATION PAGES ----------
 if page == "Sign In":
+    # FIX 1: Guard auth pages on Cloud
+    if IS_CLOUD:
+        st.info("⚠️ User accounts are disabled on Streamlit Cloud Demo.")
+        st.stop()
+
     st.markdown("<div class='hero-title'>Welcome Back</div>", unsafe_allow_html=True)
     st.markdown("<div class='hero-sub'>Sign in to access the Dashboard</div>", unsafe_allow_html=True)
     
@@ -697,6 +739,11 @@ if page == "Sign In":
                     st.error(msg)
 
 if page == "Sign Up":
+    # FIX 1: Guard auth pages on Cloud
+    if IS_CLOUD:
+        st.info("⚠️ User accounts are disabled on Streamlit Cloud Demo.")
+        st.stop()
+
     st.markdown("<div class='hero-title'>Create Account</div>", unsafe_allow_html=True)
     st.markdown("<div class='hero-sub'>Join the AI Revolution</div>", unsafe_allow_html=True)
 
@@ -1325,10 +1372,14 @@ if page == "Model Insights":
     if model is None:
         st.info("No model loaded. Upload or reload a trained model to view insights.")
         if st.button("Reload model from disk"):
-            loaded_model, load_err = load_model_from_path(MODEL_FILE_DEFAULT)
-            st.session_state["last_model"] = loaded_model
-            st.session_state["model_loaded"] = loaded_model is not None
-            st.rerun()
+            # Only try loading from disk if not on cloud
+            if not IS_CLOUD:
+                loaded_model, load_err = load_model_from_path(MODEL_FILE_DEFAULT)
+                st.session_state["last_model"] = loaded_model
+                st.session_state["model_loaded"] = loaded_model is not None
+                st.rerun()
+            else:
+                st.warning("Cannot load local file on Cloud.")
     else:
         st.success("Model successfully loaded")
 
