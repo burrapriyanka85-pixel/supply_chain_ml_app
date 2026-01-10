@@ -24,6 +24,7 @@ from sklearn.compose import ColumnTransformer
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.metrics import accuracy_score, confusion_matrix, precision_score, recall_score
 from datetime import datetime, timezone
+from werkzeug.security import generate_password_hash, check_password_hash
 
 # Security
 try:
@@ -748,7 +749,7 @@ if page == "Sign In":
                         st.error(msg)
 
 if page == "Sign Up":
-    # FIX 1: Guard auth pages on Cloud
+    # Guard auth pages on Cloud
     if IS_CLOUD:
         st.info("⚠️ User accounts are disabled on Streamlit Cloud Demo.")
         st.stop()
@@ -761,23 +762,18 @@ if page == "Sign Up":
         email = st.text_input("Email Address")
         password = st.text_input("Password", type="password")
         submitted = st.form_submit_button("Sign Up")
-        
-        if submitted:
-            if not full_name or not email or not password:
-                st.warning("Please fill in all fields.")
+
+    if submitted:
+        if not full_name or not email or not password:
+            st.warning("Please fill in all fields.")
+        else:
+            success, msg = create_user_db(email, password, full_name)
+            if success:
+                st.success("✅ Account created successfully! Please sign in.")
+                st.session_state["page"] = "Sign In"
+                st.rerun()
             else:
-                # 🛠️ STEP 3 — BLOCK SIGNUP ON CLOUD
-                if IS_CLOUD:
-                    st.warning("Account creation is disabled on Streamlit Cloud demo.")
-                    st.stop()
-                else:
-                    success, msg = create_user_db(email, password, full_name)
-                    if success:
-                        st.success("Account created successfully! Please sign in.")
-                        st.session_state["page"] = "Sign In"
-                        st.rerun()
-                    else:
-                        st.error(msg)
+                st.error(msg)
 
 # ---------- HOME ----------
 if page == "Home":
