@@ -390,7 +390,7 @@ def authenticate_user_db(email, password):
 if not IS_CLOUD:
     init_db()
 else:
-    st.session_state["db_disabled"] = True
+    st.info("🔒 User authentication disabled on Streamlit Cloud demo")
 
 # ---------- helpers to patch ColumnTransformer (compat across sklearn versions) ----------
 def _patch_column_transformer(obj):
@@ -733,14 +733,19 @@ if page == "Sign In":
             if not email or not password:
                 st.warning("Please enter both email and password.")
             else:
-                success, msg = authenticate_user_db(email, password)
-                if success:
-                    st.session_state["current_user"] = msg
-                    st.session_state["page"] = "Delivery Risk Dashboard"
-                    st.success(f"Welcome back, {msg.get('full_name') or msg.get('email')}!")
-                    st.rerun()
+                # 🛠️ STEP 3 — BLOCK LOGIN ON CLOUD
+                if IS_CLOUD:
+                    st.warning("Authentication is disabled on Streamlit Cloud demo.")
+                    st.stop()
                 else:
-                    st.error(msg)
+                    success, msg = authenticate_user_db(email, password)
+                    if success:
+                        st.session_state["current_user"] = msg
+                        st.session_state["page"] = "Delivery Risk Dashboard"
+                        st.success(f"Welcome back, {msg.get('full_name') or msg.get('email')}!")
+                        st.rerun()
+                    else:
+                        st.error(msg)
 
 if page == "Sign Up":
     # FIX 1: Guard auth pages on Cloud
@@ -761,13 +766,18 @@ if page == "Sign Up":
             if not full_name or not email or not password:
                 st.warning("Please fill in all fields.")
             else:
-                success, msg = create_user_db(email, password, full_name)
-                if success:
-                    st.success("Account created successfully! Please sign in.")
-                    st.session_state["page"] = "Sign In"
-                    st.rerun()
+                # 🛠️ STEP 3 — BLOCK SIGNUP ON CLOUD
+                if IS_CLOUD:
+                    st.warning("Account creation is disabled on Streamlit Cloud demo.")
+                    st.stop()
                 else:
-                    st.error(msg)
+                    success, msg = create_user_db(email, password, full_name)
+                    if success:
+                        st.success("Account created successfully! Please sign in.")
+                        st.session_state["page"] = "Sign In"
+                        st.rerun()
+                    else:
+                        st.error(msg)
 
 # ---------- HOME ----------
 if page == "Home":
