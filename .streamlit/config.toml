@@ -1,7 +1,8 @@
 [browser]
-serverAddress = "localhost"
-serverPort = 8501
 gatherUsageStats = false
 
+[general]
+email = ""
+
 [server]
-headless = false
+headless = true
